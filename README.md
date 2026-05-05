@@ -1,3 +1,16 @@
+## 📸 Screenshots
+
+### Home Page
+![Home](home.png)
+
+### Seat Booking
+![Seat](seat.png)
+
+### Trailers
+![Trailers](trailers.png)
+
+### Payment (Stripe)
+![Payment](payment.png)
 # QuickShow 🎬
 
 A full-stack MERN movie ticket booking platform with seat selection and secure online payments.
