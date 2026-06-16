@@ -10,9 +10,14 @@ const Navbar = () => {
   const { openSignIn } = useClerk()
   const navigate = useNavigate()
 
+  const handleClose = () => {
+    window.scrollTo(0, 0)
+    setOpen(false)
+  }
+
   return (
     <div className='fixed top-0 left-0 z-50 w-full flex items-center justify-between px-6 md:px-16 lg:px-36 py-5'>
-      <Link to='/' className='max-md:flex-1'>
+      <Link to='/' onClick={handleClose} className='max-md:flex-1'>
         <img src={assets.logo} alt='logo' className='w-28 h-auto' />
       </Link>
 
@@ -29,19 +34,23 @@ const Navbar = () => {
           onClick={() => setOpen(false)}
         />
 
-        <Link onClick={() => { scrollTo(0, 0); setOpen(false) }} to='/'>
+        <Link onClick={handleClose} to='/'>
           Home
         </Link>
-        <Link onClick={() => { scrollTo(0, 0); setOpen(false) }} to='/movies'>
+
+        <Link onClick={handleClose} to='/movies'>
           Movies
         </Link>
-        <Link onClick={() => { scrollTo(0, 0); setOpen(false) }} to='/'>
+
+        <Link onClick={handleClose} to='/theaters'>
           Theaters
         </Link>
-        <Link onClick={() => { scrollTo(0, 0); setOpen(false) }} to='/'>
+
+        <Link onClick={handleClose} to='/releases'>
           Releases
         </Link>
-        <Link onClick={() => { scrollTo(0, 0); setOpen(false) }} to='/favorite'>
+
+        <Link onClick={handleClose} to='/favorite'>
           Favorites
         </Link>
       </div>

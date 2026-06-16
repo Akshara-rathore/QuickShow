@@ -5,6 +5,16 @@ const showSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.Mixed,
     required: true,
   },
+  theatre: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Theatre',
+    required: true,
+  },
+  screen: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Screen',
+    required: true,
+  },
   showDateTime: {
     type: Date,
     required: true,

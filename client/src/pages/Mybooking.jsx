@@ -58,47 +58,49 @@ const Mybooking = () => {
         </div>
       ) : (
         <div className='space-y-6 max-w-4xl'>
-          {bookings.map((booking) => (
+          {bookings.map((booking) => {
+            const actualMovie = booking.movie || booking.show?.movie || {};
+            const fallbackImage = 'https://via.placeholder.com/300x450/111827/ffffff?text=No+Image';
+
+            return (
             <div
               key={booking._id}
               className='rounded-2xl border border-pink-500/15 bg-[linear-gradient(90deg,rgba(35,8,14,0.95),rgba(70,18,26,0.9),rgba(35,8,14,0.95))] p-4 md:p-5 shadow-[0_0_40px_rgba(255,60,100,0.08)]'
             >
               <div className='flex flex-col md:flex-row gap-4 md:gap-5'>
                 <img
-                  src={
-                    booking.show?.movie?.poster_path ||
-                    booking.show?.movie?.backdrop_path
-                  }
-                  alt={booking.show?.movie?.title}
+                  src={actualMovie.poster_path || actualMovie.backdrop_path || fallbackImage}
+                  onError={(e) => { e.target.src = fallbackImage }}
+                  alt={actualMovie.title || 'Unknown Movie'}
                   className='h-28 w-full md:w-44 object-cover rounded-xl border border-white/10'
                 />
 
                 <div className='flex-1 flex flex-col md:flex-row md:justify-between gap-4'>
                   <div>
                     <h2 className='text-lg md:text-xl font-semibold'>
-                      {booking.show?.movie?.title}
+                      {actualMovie.title || 'Untitled Movie'}
                     </h2>
 
                     <p className='text-sm text-gray-300 mt-1'>
-                      {timeFormat(booking.show?.movie?.runtime)}
+                      {actualMovie.runtime ? timeFormat(actualMovie.runtime) : 'Duration N/A'}
                     </p>
 
                     <p className='text-sm text-gray-300 mt-4'>
                       {booking.show?.showDateTime
                         ? isoTimeFormat(booking.show.showDateTime)
-                        : 'N/A'}
+                        : 'Date N/A'}
                     </p>
                   </div>
 
                   <div className='text-left md:text-right'>
-                    <p className='text-2xl font-bold'>₹{booking.amount}</p>
+                    <p className='text-2xl font-bold'>₹{booking.amount || 0}</p>
 
                     <p className='text-sm text-gray-300 mt-4'>
-                      Total Tickets: {booking.bookedSeats?.length}
+                      Total Tickets: {booking.bookedSeats?.length || 0}
                     </p>
 
                     <p className='text-sm text-gray-300 mt-1'>
-                      Seat Number: {booking.bookedSeats?.join(', ')}
+                      Seat Number: {booking.bookedSeats?.join(', ') || 'N/A'}
                     </p>
 
                     <span
@@ -132,7 +134,8 @@ const Mybooking = () => {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

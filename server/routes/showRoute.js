@@ -7,7 +7,7 @@ const router = express.Router();
 // Get all shows
 router.get('/', async (req, res) => {
   try {
-    const shows = await Show.find().sort({ showDateTime: 1 });
+    const shows = await Show.find().populate('theatre screen').sort({ showDateTime: 1 });
     res.json({ success: true, shows });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -17,10 +17,12 @@ router.get('/', async (req, res) => {
 // Add a new show (Admin)
 router.post('/add', async (req, res) => {
   try {
-    const { movie, showDateTime, showPrice } = req.body;
+    const { movie, theatre, screen, showDateTime, showPrice } = req.body;
 
     const newShow = new Show({
       movie,
+      theatre,
+      screen,
       showDateTime,
       showPrice,
       occupiedSeats: {}

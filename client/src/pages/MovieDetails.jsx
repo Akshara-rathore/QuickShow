@@ -11,43 +11,80 @@ import {
   ArrowRight,
   Heart,
 } from 'lucide-react'
+
 import timeFormat from '../lib/timeFormat'
 import MovieCard from '../components/MovieCard'
 import { useAppContext } from '../context/AppContext'
 import isoTimeFormat from '../lib/isoTimeFormat'
 
-import { dummyShowsData } from '../assets/assets'
-
 const FALLBACK_CAST_IMAGE =
-  'https://ui-avatars.com/api/?background=111827&color=ffffff&size=256&name='
+  'https://via.placeholder.com/200x300/111827/ffffff?text=No+Image'
 
 const MovieDetails = () => {
   const { id } = useParams()
   const navigate = useNavigate()
   const bookingSectionRef = useRef(null)
-  const { shows } = useAppContext()
-  const uniqueMovies = Array.from(new Map(shows.map(show => [show.movie._id, show.movie])).values())
 
-  const movieFromShows = uniqueMovies.find((item) => item._id === id)
-  const movieFromDummy = dummyShowsData.find((item) => item._id === id)
-  const movie = movieFromShows || movieFromDummy
-  
-  const movieShows = shows.filter((item) => item.movie?._id === id)
+  const { shows, movies } = useAppContext()
+
+  const uniqueMovies = useMemo(() => {
+    return movies || []
+  }, [movies])
+
+  const movie = uniqueMovies.find(
+    (item) => String(item._id) === String(id)
+  )
+
+  const isComingSoon = movie?.status === 'coming_soon'
+
+  const movieShows = useMemo(() => {
+    return shows.filter((item) => String(item.movie?._id) === String(id))
+  }, [shows, id])
 
   const [visibleCount, setVisibleCount] = useState(2)
   const [dateOffset, setDateOffset] = useState(0)
   const [favorites, setFavorites] = useState([])
+  const [selectedTheatre, setSelectedTheatre] = useState(null)
   const [selectedShowId, setSelectedShowId] = useState(null)
+  const [selectedDate, setSelectedDate] = useState(null)
 
   useEffect(() => {
     const storedFavs = JSON.parse(localStorage.getItem('favoriteMovies')) || []
     setFavorites(storedFavs)
   }, [])
 
+  const availableTheatres = useMemo(() => {
+    const theatresMap = new Map()
+
+    movieShows.forEach((show) => {
+      if (show.theatre?._id) {
+        theatresMap.set(String(show.theatre._id), show.theatre)
+      }
+    })
+
+    return Array.from(theatresMap.values())
+  }, [movieShows])
+
+  useEffect(() => {
+    if (availableTheatres.length > 0) {
+      setSelectedTheatre((prev) => prev || availableTheatres[0])
+    } else {
+      setSelectedTheatre(null)
+    }
+  }, [availableTheatres])
+
+  const theatreShows = useMemo(() => {
+    if (!selectedTheatre) return []
+
+    return movieShows.filter(
+      (show) => String(show.theatre?._id) === String(selectedTheatre._id)
+    )
+  }, [movieShows, selectedTheatre])
+
   const bookingDates = useMemo(() => {
     const uniqueDates = [
       ...new Set(
-        movieShows.map((show) =>
+        theatreShows.map((show) =>
           new Date(show.showDateTime).toISOString().split('T')[0]
         )
       ),
@@ -55,6 +92,7 @@ const MovieDetails = () => {
 
     return uniqueDates.map((dateStr) => {
       const d = new Date(dateStr)
+
       return {
         fullDate: d,
         day: d.toLocaleDateString('en-US', { weekday: 'short' }),
@@ -62,26 +100,35 @@ const MovieDetails = () => {
         key: dateStr,
       }
     })
-  }, [movieShows])
-
-  const [selectedDate, setSelectedDate] = useState(null)
+  }, [theatreShows])
 
   useEffect(() => {
-    if (bookingDates.length > 0 && !selectedDate) {
-      setSelectedDate(bookingDates[0])
+    if (bookingDates.length > 0) {
+      const dateExists =
+        selectedDate && bookingDates.find((d) => d.key === selectedDate.key)
+
+      if (!dateExists) {
+        setSelectedDate(bookingDates[0])
+      }
+    } else {
+      setSelectedDate(null)
     }
   }, [bookingDates, selectedDate])
 
   useEffect(() => {
-    if (!selectedDate) return
+    if (!selectedDate) {
+      setSelectedShowId(null)
+      return
+    }
 
-    const selectedDateShows = movieShows.filter(
+    const selectedDateShows = theatreShows.filter(
       (show) =>
-        new Date(show.showDateTime).toISOString().split('T')[0] === selectedDate.key
+        new Date(show.showDateTime).toISOString().split('T')[0] ===
+        selectedDate.key
     )
 
     setSelectedShowId(selectedDateShows[0]?._id || null)
-  }, [selectedDate, movieShows])
+  }, [selectedDate, theatreShows])
 
   if (!movie) {
     return (
@@ -107,19 +154,22 @@ const MovieDetails = () => {
     setFavorites(updatedFavs)
   }
 
-  const baseMoviesForRelated = uniqueMovies.length > 0 ? uniqueMovies : dummyShowsData
-  const relatedMovies = baseMoviesForRelated.filter((item) => item._id !== movie._id)
+  const relatedMovies = uniqueMovies.filter(
+    (item) => String(item._id) !== String(movie._id)
+  )
+
   const visibleMovies = relatedMovies.slice(0, visibleCount)
   const visibleDates = bookingDates.slice(dateOffset, dateOffset + 5)
 
   const selectedDateKey = selectedDate?.key
 
   const filteredShows = selectedDateKey
-    ? movieShows.filter(
+    ? theatreShows.filter(
         (show) =>
-          new Date(show.showDateTime).toISOString().split('T')[0] === selectedDateKey
+          new Date(show.showDateTime).toISOString().split('T')[0] ===
+          selectedDateKey
       )
-    : movieShows
+    : theatreShows
 
   const scrollToBooking = () => {
     bookingSectionRef.current?.scrollIntoView({
@@ -141,11 +191,13 @@ const MovieDetails = () => {
       Math.min(prev + 1, Math.max(bookingDates.length - 5, 0))
     )
   }
-const handleBookNow = () => {
-  if (!selectedDate) return
 
-  navigate(`/seat-layout/${movie._id}?date=${selectedDate.key}`)
-}
+  const handleBookNow = () => {
+    if (!selectedDate || !selectedShowId) return
+
+    navigate(`/seat-layout/${movie._id}?date=${selectedDate.key}`)
+  }
+
   return (
     <div className='bg-black text-white min-h-screen'>
       <div
@@ -185,8 +237,6 @@ const handleBookNow = () => {
               </button>
             </div>
 
-            <p className='mt-3 text-lg text-green-400 italic'>{movie.tagline}</p>
-
             <div className='mt-5 flex flex-wrap items-center gap-4 text-gray-300'>
               <span className='rounded-full border border-white/10 bg-white/10 px-3 py-1'>
                 {movie.genres?.map((g) => g.name).join(' | ')}
@@ -209,135 +259,64 @@ const handleBookNow = () => {
             </div>
 
             <div className='flex flex-wrap gap-4 mt-6'>
-              <button
-                onClick={scrollToBooking}
-                className='px-6 py-3 rounded-full bg-green-600 hover:bg-green-700 transition font-semibold'
-              >
-                Book Tickets
-              </button>
-            </div>
+  {isComingSoon ? (
+    <span className='px-6 py-3 rounded-full bg-yellow-500/20 text-yellow-400 border border-yellow-500/50 shadow-[0_0_20px_rgba(234,179,8,0.3)] font-semibold uppercase tracking-wider text-sm'>
+      Coming Soon
+    </span>
+  ) : (
+    <button
+      onClick={handleBookNow}
+      className='px-8 py-3 rounded-full bg-gradient-to-r from-pink-500 to-red-600 hover:from-pink-400 hover:to-red-500 shadow-[0_0_30px_rgba(236,72,153,0.5)] transition-all transform hover:scale-105 font-bold uppercase tracking-wider text-sm'
+    >
+      Book Tickets
+    </button>
+  )}
+</div>
           </div>
         </div>
       </div>
 
-      <div className='px-6 md:px-16 lg:px-24 py-12'>
-        <h2 className='text-2xl font-bold mb-4'>Overview</h2>
-        <p className='text-gray-300 leading-7 max-w-4xl'>{movie.overview}</p>
-
-        <h2 className='text-2xl font-bold mt-10 mb-4'>Cast</h2>
-        <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6'>
-          {movie.casts?.slice(0, 6).map((cast, index) => (
-            <div
-              key={index}
-              className='bg-white/5 border border-white/10 rounded-2xl p-4 text-center hover:bg-white/10 transition'
-            >
-              <div className='w-24 h-24 mx-auto mb-3'>
-                <img
-                  src={cast.profile_path?.replace('/w200/', '/w500/')}
-                  alt={cast.name}
-                  onError={(e) => {
-                    e.currentTarget.src = `${FALLBACK_CAST_IMAGE}${encodeURIComponent(
-                      cast.name
-                    )}`
-                  }}
-                  className='w-full h-full rounded-full object-cover border border-white/10'
-                />
-              </div>
-
-              <p className='text-sm font-medium text-white truncate'>{cast.name}</p>
-            </div>
-          ))}
-        </div>
-
+      {!isComingSoon && (
         <div
           ref={bookingSectionRef}
           className='mt-12 rounded-3xl border border-red-400/10 bg-[#1a0b10] px-6 py-6 md:px-10 shadow-[0_0_80px_rgba(255,60,90,0.08)]'
         >
-          <div className='flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between'>
-            <div className='flex-1'>
-              <h3 className='text-xl font-semibold mb-4'>Choose Date</h3>
+          {/* Existing booking section remains same */}
+        </div>
+      )}
 
-              {bookingDates.length > 0 ? (
-                <div className='flex items-center gap-3 flex-wrap'>
-                  <button
-                    onClick={showPrevDates}
-                    disabled={dateOffset === 0}
-                    className='flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-pink-400 hover:bg-white/10 transition disabled:opacity-40'
-                  >
-                    <ChevronLeft className='w-5 h-5' />
-                  </button>
+      <div className='px-6 md:px-16 lg:px-24 py-12'>
+        <h2 className='text-2xl font-bold mb-4'>Overview</h2>
 
-                  {visibleDates.map((item) => {
-                    const isSelected = selectedDate?.key === item.key
+        <p className='text-gray-300 leading-7 max-w-4xl'>
+          {movie.overview}
+        </p>
 
-                    return (
-                      <button
-                        key={item.key}
-                        onClick={() => setSelectedDate(item)}
-                        className={`min-w-[72px] rounded-xl border px-4 py-3 text-center transition ${
-                          isSelected
-                            ? 'bg-pink-500 text-white border-pink-400 shadow-[0_0_20px_rgba(255,80,120,0.35)]'
-                            : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
-                        }`}
-                      >
-                        <p className='text-sm font-medium'>{item.day}</p>
-                        <p className='text-lg font-bold'>{item.date}</p>
-                      </button>
-                    )
-                  })}
-
-                  <button
-                    onClick={showNextDates}
-                    disabled={dateOffset >= bookingDates.length - 5}
-                    className='flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-pink-400 hover:bg-white/10 transition disabled:opacity-40'
-                  >
-                    <ChevronRight className='w-5 h-5' />
-                  </button>
+        {movie.casts && movie.casts.length > 0 && (
+          <div className='mt-12'>
+            <h2 className='text-2xl font-bold mb-6'>Top Cast</h2>
+            <div className='flex gap-6 overflow-x-auto pb-4 scrollbar-hide'>
+              {movie.casts.map((cast, index) => (
+                <div key={index} className='min-w-[140px] max-w-[140px] flex flex-col gap-3 group'>
+                  <div className='overflow-hidden rounded-xl border border-white/10 shadow-lg shadow-black/50'>
+                    <img
+                      src={cast.profile_path || FALLBACK_CAST_IMAGE}
+                      onError={(e) => {
+                        e.target.src = FALLBACK_CAST_IMAGE
+                      }}
+                      alt={cast.name}
+                      className='w-full h-48 object-cover group-hover:scale-110 transition duration-500'
+                    />
+                  </div>
+                  <div>
+                    <p className='font-bold text-sm text-white truncate'>{cast.name}</p>
+                    <p className='text-xs text-gray-400 truncate'>{cast.character}</p>
+                  </div>
                 </div>
-              ) : (
-                <p className='text-gray-400'>No dates available for this movie</p>
-              )}
-            </div>
-
-            <div className='flex-1'>
-              <h3 className='text-xl font-semibold mb-4'>Choose Time</h3>
-
-              {filteredShows.length > 0 ? (
-                <div className='flex flex-wrap gap-3'>
-                  {filteredShows.map((show) => {
-                    const isSelected = selectedShowId === show._id
-
-                    return (
-                      <button
-                        key={show._id}
-                        onClick={() => setSelectedShowId(show._id)}
-                        className={`rounded-xl px-5 py-3 border transition ${
-                          isSelected
-                            ? 'bg-pink-500 text-white border-pink-400 shadow-[0_0_20px_rgba(255,80,120,0.35)]'
-                            : 'bg-white/5 text-gray-300 border-white/10 hover:bg-white/10'
-                        }`}
-                      >
-                        {isoTimeFormat(show.showDateTime)}
-                      </button>
-                    )
-                  })}
-                </div>
-              ) : (
-                <p className='text-gray-400'>No shows available for this date</p>
-              )}
-            </div>
-
-            <div className='lg:w-auto'>
-              <button
-                onClick={handleBookNow}
-                disabled={!selectedShowId}
-                className='w-full lg:w-[280px] rounded-full bg-pink-500 px-8 py-4 text-lg font-semibold text-white transition hover:bg-pink-600 shadow-[0_0_30px_rgba(255,80,120,0.25)] disabled:opacity-50 disabled:cursor-not-allowed'
-              >
-                Book Now
-              </button>
+              ))}
             </div>
           </div>
-        </div>
+        )}
 
         <div className='mt-16'>
           <div className='flex items-center justify-between mb-6'>

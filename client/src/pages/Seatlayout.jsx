@@ -8,7 +8,7 @@ import { useAppContext } from '../context/AppContext'
 import { useUser } from '@clerk/react'
 import axios from 'axios'
 
-const seatRows = [
+const defaultSeatRows = [
   { row: 'A', seats: ['1', '2', '3', '4', '5', '6', '7', '8', '9'] },
   { row: 'B', seats: ['1', '2', '3', '4', '5', '6', '7', '8', '9'] },
   { row: 'C', seats: ['1', '2', '3', '4', '5', '6', '7', '8', '9'] },
@@ -18,11 +18,18 @@ const seatRows = [
   { row: 'G', seats: ['1', '2', '3', '4', '5', '6', '7', '8', '9'] },
 ]
 
+const defaultSeatTiers = [
+  { name: 'Platinum', price: 400, rows: ['F', 'G'] },
+  { name: 'Gold', price: 250, rows: ['C', 'D', 'E'] },
+  { name: 'Silver', price: 150, rows: ['A', 'B'] }
+]
+
 const Seatlayout = () => {
   const { movieId } = useParams()
   const location = useLocation()
   const navigate = useNavigate()
-  const { shows, addBooking, API_URL } = useAppContext()
+  const { shows, API_URL } = useAppContext()
+  const { user } = useUser()
 
   const queryParams = new URLSearchParams(location.search)
   const selectedDate = queryParams.get('date')
@@ -30,6 +37,7 @@ const Seatlayout = () => {
   const [selectedSeats, setSelectedSeats] = useState([])
   const [selectedTime, setSelectedTime] = useState(null)
   const [selectedShow, setSelectedShow] = useState(null)
+  const [loading, setLoading] = useState(false)
 
   const movieShows = useMemo(() => {
     return shows.filter((item) => {
@@ -48,6 +56,7 @@ const Seatlayout = () => {
     setSelectedSeats([])
     setSelectedTime(null)
     setSelectedShow(null)
+    setLoading(false)
   }, [movieId, selectedDate])
 
   const handleTimeSelect = (show) => {
@@ -76,9 +85,9 @@ const Seatlayout = () => {
     )
   }
 
-  const { user } = useUser()
-
   const handleProceed = async () => {
+    if (loading) return
+
     if (!user) {
       return toast('Please sign in to book tickets')
     }
@@ -92,20 +101,28 @@ const Seatlayout = () => {
     }
 
     try {
+      setLoading(true)
+
       const { data } = await axios.post(`${API_URL}/bookings/create`, {
         clerkId: user.id,
         showId: selectedShow._id,
-        seats: selectedSeats
+        seats: selectedSeats,
+        name: user?.fullName,
+        email: user?.primaryEmailAddress?.emailAddress,
+        image: user?.imageUrl,
       })
 
       if (data.success) {
         toast.success('Redirecting to checkout...')
         window.location.href = data.url
-      } else {
-        toast.error(data.message || 'Booking failed')
+        return
       }
+
+      toast.error(data.message || 'Booking failed')
+      setLoading(false)
     } catch (error) {
       toast.error(error.response?.data?.message || 'Error creating booking')
+      setLoading(false)
     }
   }
 
@@ -121,10 +138,18 @@ const Seatlayout = () => {
 
               <div className='space-y-3'>
                 {movieShows.length > 0 ? (
-                  movieShows.map((show) => (
+                  Array.from(
+                    new Map(
+                      movieShows.map((show) => [
+                        isoTimeFormat(show.showDateTime),
+                        show,
+                      ])
+                    ).values()
+                  ).map((show) => (
                     <button
                       key={show._id}
                       onClick={() => handleTimeSelect(show)}
+                      disabled={loading}
                       className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left transition ${
                         selectedShow?._id === show._id
                           ? 'bg-pink-500 text-white'
@@ -132,7 +157,9 @@ const Seatlayout = () => {
                       }`}
                     >
                       <Clock3 className='h-5 w-5' />
-                      <span className='text-lg'>{isoTimeFormat(show.showDateTime)}</span>
+                      <span className='text-lg'>
+                        {isoTimeFormat(show.showDateTime)}
+                      </span>
                     </button>
                   ))
                 ) : (
@@ -147,20 +174,30 @@ const Seatlayout = () => {
                 </div>
 
                 <div>
-                  <p className='text-sm text-gray-400'>Price (Total)</p>
+                  <p className='text-sm text-gray-400'>Price Total</p>
                   <p className='text-lg font-medium'>
-                    Rs {selectedSeats.length > 0 ? (() => {
-                      const seatTiers = selectedShow?.seatTiers || [
-                        { name: 'Platinum', price: 400, rows: ['F', 'G'] },
-                        { name: 'Gold', price: 250, rows: ['C', 'D', 'E'] },
-                        { name: 'Silver', price: 150, rows: ['A', 'B'] }
-                      ];
-                      return selectedSeats.reduce((acc, seat) => {
-                        const r = seat.charAt(0);
-                        const t = seatTiers.find(tier => tier.rows.includes(r));
-                        return acc + (t ? t.price : (selectedShow?.showPrice || 150));
-                      }, 0);
-                    })() : (selectedShow?.showPrice ?? movieShows[0]?.showPrice ?? 150)}
+                    Rs{' '}
+                    {selectedSeats.length > 0
+                      ? (() => {
+                          const seatTiers =
+                            selectedShow?.screen?.seatTiers?.length > 0
+                              ? selectedShow.screen.seatTiers
+                              : selectedShow?.seatTiers || defaultSeatTiers
+
+                          return selectedSeats.reduce((acc, seat) => {
+                            const row = seat.charAt(0)
+                            const tier = seatTiers.find((tier) =>
+                              tier.rows.includes(row)
+                            )
+
+                            const price = tier
+                              ? tier.priceOffset || tier.price
+                              : selectedShow?.showPrice || 150
+
+                            return acc + price
+                          }, 0)
+                        })()
+                      : selectedShow?.showPrice ?? movieShows[0]?.showPrice ?? 150}
                   </p>
                 </div>
               </div>
@@ -183,93 +220,134 @@ const Seatlayout = () => {
 
             <div className='max-w-5xl mx-auto'>
               <div className='space-y-5'>
-                {seatRows.map((rowData, rowIndex) => {
-                  const leftBlock = rowData.seats.slice(0, rowIndex < 2 ? 9 : 4)
-                  const rightBlock = rowIndex < 2 ? [] : rowData.seats.slice(4)
+                {(() => {
+                  const seatRows =
+                    selectedShow?.screen?.seatRows?.length > 0
+                      ? selectedShow.screen.seatRows
+                      : defaultSeatRows
 
-                  return (
-                    <React.Fragment key={rowData.row}>
-                      {rowData.row === 'A' && <div className='w-full text-center text-xs tracking-widest font-bold text-gray-500 mt-4 mb-2'>SILVER TIER - Rs 150</div>}
-                      {rowData.row === 'C' && <div className='w-full text-center text-xs tracking-widest font-bold text-amber-500/80 mt-6 mb-2 border-t border-amber-500/20 pt-4'>GOLD TIER - Rs 250</div>}
-                      {rowData.row === 'F' && <div className='w-full text-center text-xs tracking-widest font-bold text-pink-500/80 mt-6 mb-2 border-t border-pink-500/20 pt-4'>PLATINUM (RECLINERS) - Rs 400</div>}
-                    <div
-                      className='flex items-center justify-center gap-4 md:gap-6'
-                    >
-                      <div className='w-6 text-gray-400 font-medium'>
-                        {rowData.row}
-                      </div>
+                  const seatTiers =
+                    selectedShow?.screen?.seatTiers?.length > 0
+                      ? selectedShow.screen.seatTiers
+                      : selectedShow?.seatTiers || defaultSeatTiers
 
-                      <div className='flex items-center gap-2 md:gap-3'>
-                        {leftBlock.map((seatNo) => {
-                          const seatId = `${rowData.row}${seatNo}`
-                          const isSelected = selectedSeats.includes(seatId)
-                          const isOccupied = Boolean(selectedShow?.occupiedSeats?.[seatId])
+                  const tierStartingRows = new Map()
 
-                          return (
-                            <button
-                              key={seatId}
-                              onClick={() => handleSeatClick(seatId)}
-                              disabled={isOccupied}
-                              className={`h-9 w-9 md:h-11 md:w-11 rounded-md border transition ${
-                                isOccupied
-                                  ? 'bg-gray-500 border-gray-600 cursor-not-allowed opacity-50'
-                                  : isSelected
-                                  ? 'bg-pink-500 border-pink-400 shadow-[0_0_18px_rgba(255,90,130,0.35)] text-white'
-                                  : 'border-pink-500/45 bg-transparent hover:bg-pink-500/10'
-                              }`}
-                              title={seatId}
-                            />
-                          )
-                        })}
-                      </div>
+                  seatTiers.forEach((tier) => {
+                    if (tier.rows && tier.rows.length > 0) {
+                      tierStartingRows.set(tier.rows[0], tier)
+                    }
+                  })
 
-                      {rowIndex >= 2 && <div className='w-6 md:w-10' />}
+                  return seatRows.map((rowData, rowIndex) => {
+                    const leftBlock = rowData.seats.slice(
+                      0,
+                      rowIndex < 2 ? 9 : 4
+                    )
+                    const rightBlock =
+                      rowIndex < 2 ? [] : rowData.seats.slice(4)
 
-                      {rowIndex >= 2 && (
-                        <div className='flex items-center gap-2 md:gap-3'>
-                          {rightBlock.map((seatNo) => {
-                            const seatId = `${rowData.row}${seatNo}`
-                            const isSelected = selectedSeats.includes(seatId)
-                            const isOccupied = Boolean(selectedShow?.occupiedSeats?.[seatId])
+                    const tierForThisRowStart = tierStartingRows.get(
+                      rowData.row
+                    )
 
-                            return (
-                              <button
-                                key={seatId}
-                                onClick={() => handleSeatClick(seatId)}
-                                disabled={isOccupied}
-                                className={`h-9 w-9 md:h-11 md:w-11 rounded-md border transition ${
-                                  isOccupied
-                                    ? 'bg-gray-500 border-gray-600 cursor-not-allowed opacity-50'
-                                    : isSelected
-                                    ? 'bg-pink-500 border-pink-400 shadow-[0_0_18px_rgba(255,90,130,0.35)] text-white'
-                                    : 'border-pink-500/45 bg-transparent hover:bg-pink-500/10'
-                                }`}
-                                title={seatId}
-                              />
-                            )
-                          })}
+                    return (
+                      <React.Fragment key={rowData.row}>
+                        {tierForThisRowStart && (
+                          <div className='w-full text-center text-xs tracking-widest font-bold text-pink-500/80 mt-6 mb-2 border-t border-pink-500/20 pt-4 uppercase'>
+                            {tierForThisRowStart.name} TIER - Rs{' '}
+                            {tierForThisRowStart.priceOffset ||
+                              tierForThisRowStart.price ||
+                              150}
+                          </div>
+                        )}
+
+                        <div className='flex items-center justify-center gap-4 md:gap-6'>
+                          <div className='w-6 text-gray-400 font-medium'>
+                            {rowData.row}
+                          </div>
+
+                          <div className='flex items-center gap-2 md:gap-3'>
+                            {leftBlock.map((seatNo) => {
+                              const seatId = `${rowData.row}${seatNo}`
+                              const isSelected = selectedSeats.includes(seatId)
+                              const isOccupied = Boolean(
+                                selectedShow?.occupiedSeats?.[seatId]
+                              )
+
+                              return (
+                                <button
+                                  key={seatId}
+                                  onClick={() => handleSeatClick(seatId)}
+                                  disabled={isOccupied || loading}
+                                  className={`h-9 w-9 md:h-11 md:w-11 rounded-md border transition ${
+                                    isOccupied
+                                      ? 'bg-gray-500 border-gray-600 cursor-not-allowed opacity-50'
+                                      : isSelected
+                                      ? 'bg-pink-500 border-pink-400 shadow-[0_0_18px_rgba(255,90,130,0.35)] text-white'
+                                      : 'border-pink-500/45 bg-transparent hover:bg-pink-500/10'
+                                  }`}
+                                  title={seatId}
+                                />
+                              )
+                            })}
+                          </div>
+
+                          {rowIndex >= 2 && <div className='w-6 md:w-10' />}
+
+                          {rowIndex >= 2 && (
+                            <div className='flex items-center gap-2 md:gap-3'>
+                              {rightBlock.map((seatNo) => {
+                                const seatId = `${rowData.row}${seatNo}`
+                                const isSelected =
+                                  selectedSeats.includes(seatId)
+                                const isOccupied = Boolean(
+                                  selectedShow?.occupiedSeats?.[seatId]
+                                )
+
+                                return (
+                                  <button
+                                    key={seatId}
+                                    onClick={() => handleSeatClick(seatId)}
+                                    disabled={isOccupied || loading}
+                                    className={`h-9 w-9 md:h-11 md:w-11 rounded-md border transition ${
+                                      isOccupied
+                                        ? 'bg-gray-500 border-gray-600 cursor-not-allowed opacity-50'
+                                        : isSelected
+                                        ? 'bg-pink-500 border-pink-400 shadow-[0_0_18px_rgba(255,90,130,0.35)] text-white'
+                                        : 'border-pink-500/45 bg-transparent hover:bg-pink-500/10'
+                                    }`}
+                                    title={seatId}
+                                  />
+                                )
+                              })}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                    </React.Fragment>
-                  )
-                })}
+                      </React.Fragment>
+                    )
+                  })
+                })()}
               </div>
 
               <div className='mt-12 text-center space-y-2 text-gray-300'>
                 <p>
                   Movie: <span className='text-white'>{movie.title}</span>
                 </p>
+
                 <p>
                   Selected time:{' '}
                   <span className='text-white'>
                     {selectedTime ? isoTimeFormat(selectedTime) : 'None'}
                   </span>
                 </p>
+
                 <p>
                   Selected seats:{' '}
                   <span className='text-white'>
-                    {selectedSeats.length > 0 ? selectedSeats.join(', ') : 'None'}
+                    {selectedSeats.length > 0
+                      ? selectedSeats.join(', ')
+                      : 'None'}
                   </span>
                 </p>
               </div>
@@ -279,10 +357,12 @@ const Seatlayout = () => {
                   <div className='h-4 w-4 rounded border border-pink-500/45' />
                   <span>Available</span>
                 </div>
+
                 <div className='flex items-center gap-2'>
                   <div className='h-4 w-4 rounded bg-pink-500' />
                   <span>Selected</span>
                 </div>
+
                 <div className='flex items-center gap-2'>
                   <div className='h-4 w-4 rounded bg-gray-500 border-gray-600 opacity-50' />
                   <span>Occupied</span>
@@ -292,9 +372,10 @@ const Seatlayout = () => {
               <div className='mt-10 flex justify-center'>
                 <button
                   onClick={handleProceed}
-                  className='rounded-full bg-pink-500 px-8 py-3 text-base font-semibold transition hover:bg-pink-600'
+                  disabled={loading}
+                  className='rounded-full bg-pink-500 px-8 py-3 text-base font-semibold transition hover:bg-pink-600 disabled:opacity-50 disabled:cursor-not-allowed'
                 >
-                  Proceed to Checkout
+                  {loading ? 'Redirecting...' : 'Proceed to Checkout'}
                 </button>
               </div>
             </div>

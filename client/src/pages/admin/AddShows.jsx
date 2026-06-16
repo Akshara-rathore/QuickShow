@@ -5,18 +5,22 @@ import Title from '../../components/admin/Title'
 import { toast } from 'react-hot-toast'
 
 const AddShows = () => {
-  const { addShow } = useAppContext()
+  const { addShow, theatres, screens } = useAppContext()
 
   const [movieId, setMovieId] = useState(dummyShowsData[0]?._id || '')
+  const [theatreId, setTheatreId] = useState('')
+  const [screenId, setScreenId] = useState('')
   const [showPrice, setShowPrice] = useState('')
   const [showDateTime, setShowDateTime] = useState('')
+
+  const availableScreens = screens.filter(s => s.theatre?._id === theatreId)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
 
     const selectedMovie = dummyShowsData.find((movie) => movie._id === movieId)
 
-    if (!selectedMovie || !showPrice || !showDateTime) {
+    if (!selectedMovie || !theatreId || !screenId || !showPrice || !showDateTime) {
       toast.error('Please fill all fields')
       return
     }
@@ -24,6 +28,8 @@ const AddShows = () => {
     try {
       await addShow({
         movie: selectedMovie,
+        theatre: theatreId,
+        screen: screenId,
         showPrice: Number(showPrice),
         showDateTime,
         occupiedSeats: {},
@@ -51,6 +57,36 @@ const AddShows = () => {
           {dummyShowsData.map((movie) => (
             <option key={movie._id} value={movie._id}>
               {movie.title}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={theatreId}
+          onChange={(e) => {
+            setTheatreId(e.target.value)
+            setScreenId('') // reset screen
+          }}
+          className="w-full p-3 rounded bg-black border border-primary/20 outline-none"
+        >
+          <option value="" disabled>Select Theatre</option>
+          {theatres.map((t) => (
+            <option key={t._id} value={t._id}>
+              {t.name} - {t.location}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={screenId}
+          onChange={(e) => setScreenId(e.target.value)}
+          className="w-full p-3 rounded bg-black border border-primary/20 outline-none"
+          disabled={!theatreId}
+        >
+          <option value="" disabled>Select Screen</option>
+          {availableScreens.map((s) => (
+            <option key={s._id} value={s._id}>
+              {s.name}
             </option>
           ))}
         </select>
